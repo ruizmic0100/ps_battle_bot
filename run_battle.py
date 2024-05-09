@@ -5,11 +5,13 @@ import concurrent.futures
 from copy import deepcopy
 import logging
 
+import data
+from data.helpers import get_standard_battle_sets
 import constants
 from config import ShowdownConfig
-from battle import Pokemon
-from battle import LastUsedMove
-from battle_modifer import async_update_battle
+# from battle import Pokemon
+# from battle import LastUsedMove
+# from battle_modifer import async_update_battle
 
 from websocket_client import PSWebsocketClient
 
@@ -114,12 +116,49 @@ async def start_random_battle(ps_websocket_client: PSWebsocketClient, pokemon_ba
 
     return battle
 
+async def start_standard_battle(ps_websocket_client: PSWebsocketClient, pokemon_battle_type):
+    battle, opponent_id, user_json = await initialize_battle_with_tag(ps_websocket_client, set_request_json=False)
+    battle.battle_type = constants.STANDARD_BATTLE
+    battle.generation = pokemon_battle_type[:4]
+
+    if battle.generation in constants.NO_TEAM_PREVIEW_GENS:
+        await read_messages_until_first_pokemon_is_seen(ps_websocket_client, battle, opponent_id, user_json)
+    else:
+        msg = ''
+        while constants.START_TEAM_PREVIEW not in msg:
+            msg = await ps_websocket_client.receive_message()
+
+        preview_string_lines = msg.split(constants.START_TEAM_PREVIEW)[-1].split('\n')
+
+        opponent_pokemon = []
+        for line in preview_string_lines:
+            if not line:
+                continue
+            split_line = line.split('|')
+            if split_line[1] == constants.TEAM_PREVIEW_POKE and split_line[2].strip() == opponent_id:
+                opponent_pokemon.append(split_line[3])
+            
+        battle.initialize_team_preview(user_json, opponent_pokemon, pokemon_battle_type)
+        battle.during_team_preview()
+
+        smogon_usage_data = get_standard_battle_sets(
+            pokemon_battle_type,
+            pokemon_names=set(p.name for p in battle.opponent.reserve + battle.user.reserve)
+        )
+        data.pokemon_sets = smogon_usage_data
+        for pkmn, values in smogon_usage_data.items():
+            data.effectiveness[pkmn] = values["effectiveness"]
+        
+        await handle_team_preview(battle, ps_websocket_client)
+
+    return battle
+
 async def start_battle(ps_websocket_client, pokemon_battle_type):
     if "random" in pokemon_battle_type:
         # Scoring.POKEMON_ALIVE_STATIC = 30 # random battle benefits from a lower static score for an alive pkmn
         battle = await start_random_battle(ps_websocket_client, pokemon_battle_type)
-    # else:
-        # battle = await start_standard_battle(ps_websocket_client, pokemon_battle_type)
+    else:
+        battle = await start_standard_battle(ps_websocket_client, pokemon_battle_type)
 
     await ps_websocket_client.send_message(battle.battle_tag, ["hf"])
     await ps_websocket_client.send_message(battle.battle_tag, ['/timer on'])

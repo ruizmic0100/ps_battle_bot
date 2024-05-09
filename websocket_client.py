@@ -60,7 +60,7 @@ class PSWebsocketClient:
         logger.debug("Logging in...")
         client_id, challstr = await self.get_id_and_challstr()
         if self.password:
-            respone = requests.post(
+            response = requests.post(
                 self.login_uri,
                 data={
                     'act': 'login',
@@ -134,8 +134,8 @@ class PSWebsocketClient:
             ):
                 username = split_msg[2].strip()
 
-            message = ["/accept " + username]
-            await self.send_message('', message)
+        message = ["/accept " + username]
+        await self.send_message('', message)
 
     async def search_for_match(self, battle_format, team):
         logger.debug("Searching for ranked {} match".format(battle_format))
