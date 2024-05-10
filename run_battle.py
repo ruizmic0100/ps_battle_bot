@@ -9,9 +9,10 @@ import data
 from data.helpers import get_standard_battle_sets
 import constants
 from config import ShowdownConfig
-# from battle import Pokemon
-# from battle import LastUsedMove
-# from battle_modifer import async_update_battle
+from engine.evaluate import Scoring
+from battle import Pokemon
+from battle import LastUsedMove
+from battle_modifier import async_update_battle
 
 from websocket_client import PSWebsocketClient
 
@@ -31,7 +32,7 @@ async def async_pick_move(battle):
 
     loop = asyncio.get_event_loop()
     with concurrent.futures.ThreadPoolExecutor() as pool:
-        best_most = await loop.run_in_executor(
+        best_move = await loop.run_in_executor(
             pool, battle_copy.find_best_move
         )
     choice = best_move[0]
@@ -57,20 +58,24 @@ async def handle_team_preview(battle, ps_websocket_client):
     await ps_websocket_client.send_message(battle.battle_tag, message)
 
 async def get_battle_tag_and_opponent(ps_websocket_client: PSWebsocketClient):
+    print(f"inside get_battle_tag_and_opponent\n")
     while True:
         msg = await ps_websocket_client.receive_message()
         split_msg = msg.split('|')
         first_msg = split_msg[0]
         if 'battle' in first_msg:
+            print(f"inside if statement\n")
             battle_tag = first_msg.replace('>', '').strip()
             user_name = split_msg[1].replace('☆', '').strip()
             opponent_name = split_msg[4].replace(user_name, '').replace('vs.', '').strip()
             return battle_tag, opponent_name
 
 async def initialize_battle_with_tag(ps_websocket_client: PSWebsocketClient, set_request_json=True):
-    battle_module = importlib.import_module('showdown.battle_bots.{}.main'.format(ShowdownConfig.battle_bot_module))
+    print(f"battle_bot_module: {ShowdownConfig.battle_bot_module}\n")
+    battle_module = importlib.import_module('battle_bots.{}.main'.format(ShowdownConfig.battle_bot_module))
 
     battle_tag, opponent_name = await get_battle_tag_and_opponent(ps_websocket_client)
+    print(f"opponent: {ShowdownConfig.battle_bot_module}\n")
     while True:
         msg = await ps_websocket_client.receive_message()
         split_msg = msg.split('|')
@@ -84,7 +89,8 @@ async def initialize_battle_with_tag(ps_websocket_client: PSWebsocketClient, set
 
             if set_request_json:
                 battle.request_json = user_json
-            
+
+            print(f"finished initialize_battle_with_tag\n")
             return battle, opponent_id, user_json
 
 async def read_messages_until_first_pokemon_is_seen(ps_websocket_client, battle, opponent_id, user_json):
